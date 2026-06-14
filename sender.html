@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IMU Sender</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #eee; }
+    h2 { color: #00d4ff; }
+    .box { background: #16213e; border-radius: 12px; padding: 16px; margin: 10px 0; }
+    .val { font-size: 1.2em; color: #00d4ff; }
+    button { width: 100%; padding: 14px; margin-top: 16px; border: none; border-radius: 10px; font-size: 1em; cursor: pointer; }
+    #btnStart { background: #00b4d8; color: #fff; }
+    #btnStop { background: #e63946; color: #fff; display: none; }
+    #status { color: #ffd166; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>iPhone IMU → ESP8266</h2>
+  <div class="box">
+    <b>Akselerometer (m/s²)</b><br>
+    X: <span class="val" id="ax">-</span>
+    Y: <span class="val" id="ay">-</span>
+    Z: <span class="val" id="az">-</span>
+  </div>
+  <div class="box">
+    <b>Giroskop (rad/s)</b><br>
+    X: <span class="val" id="gx">-</span>
+    Y: <span class="val" id="gy">-</span>
+    Z: <span class="val" id="gz">-</span>
+  </div>
+  <p id="status">Belum terhubung</p>
+  <button id="btnStart" onclick="startSensor()">Mulai Kirim Data</button>
+  <button id="btnStop" onclick="stopSensor()">Stop</button>
+
+  <script>
+    // GANTI IP INI DENGAN IP ESP8266 KAMU
+    const ESP_IP = "192.168.1.11";
+    const WS_URL = "ws://" + ESP_IP + ":81";
+
+    let ws = null;
+    let interval = null;
+    let latestData = {};
+
+    function startSensor() {
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission()
+          .then(state => {
+            if (state === 'granted') {
+              initSensor();
+            } else {
+              document.getElementById('status').innerText = 'Izin sensor ditolak!';
+            }
+          }).catch(console.error);
+      } else {
+        initSensor();
+      }
+    }
+
+    function initSensor() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        document.getElementById('status').innerText = 'Terhubung ke ESP8266!';
+        document.getElementById('btnStart').style.display = 'none';
+        document.getElementById('btnStop').style.display = 'block';
+      };
+      ws.onclose = () => {
+        document.getElementById('status').innerText = 'Koneksi terputus.';
+        document.getElementById('btnStart').style.display = 'block';
+        document.getElementById('btnStop').style.display = 'none';
+      };
+      window.addEventListener('devicemotion', handleMotion);
+      interval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN && latestData.ax !== undefined) {
+          ws.send(JSON.stringify(latestData));
+        }
+      }, 100);
+    }
+
+    function handleMotion(event) {
+      const a = event.accelerationIncludingGravity;
+      const r = event.rotationRate;
+      latestData = {
+        ax: a ? a.x.toFixed(3) : 0,
+        ay: a ? a.y.toFixed(3) : 0,
+        az: a ? a.z.toFixed(3) : 0,
+        gx: r ? (r.alpha * Math.PI / 180).toFixed(3) : 0,
+        gy: r ? (r.beta * Math.PI / 180).toFixed(3) : 0,
+        gz: r ? (r.gamma * Math.PI / 180).toFixed(3) : 0
+      };
+      document.getElementById('ax').innerText = latestData.ax;
+      document.getElementById('ay').innerText = latestData.ay;
+      document.getElementById('az').innerText = latestData.az;
+      document.getElementById('gx').innerText = latestData.gx;
+      document.getElementById('gy').innerText = latestData.gy;
+      document.getElementById('gz').innerText = latestData.gz;
+    }
+
+    function stopSensor() {
+      clearInterval(interval);
+      window.removeEventListener('devicemotion', handleMotion);
+      if (ws) ws.close();
+    }
+  </script>
+</body>
+</html>
